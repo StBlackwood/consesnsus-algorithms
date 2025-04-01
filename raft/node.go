@@ -57,7 +57,7 @@ func (rn *Node) Start() error {
 
 func (rn *Node) electionTimer() {
 	for {
-		time.Sleep(time.Duration(50+rand.Intn(50)) * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 
 		rn.mu.Lock()
 		state := rn.state
@@ -66,8 +66,20 @@ func (rn *Node) electionTimer() {
 
 		// If still follower and no heartbeat, trigger election
 		if state == Follower && elapsed > 300*time.Millisecond {
-			log.Printf("[%s] election timeout - becoming candidate", rn.id)
-			rn.startElection()
+			// in this case wait for some random time
+			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+
+			// maybe new leader was found during the wait. check again
+			rn.mu.Lock()
+			state := rn.state
+			elapsed := time.Since(rn.lastHeartbeat)
+			rn.mu.Unlock()
+
+			// If still follower and no heartbeat, trigger election
+			if state == Follower && elapsed > 300*time.Millisecond {
+				log.Printf("[%s] election timeout - becoming candidate", rn.id)
+				rn.startElection()
+			}
 		}
 	}
 }
@@ -117,6 +129,11 @@ func (rn *Node) startElection() {
 		rn.votedFor = ""
 		rn.mu.Unlock()
 		go rn.heartbeatLoop()
+	} else {
+		rn.mu.Lock()
+		rn.state = Follower
+		rn.votedFor = ""
+		rn.mu.Unlock()
 	}
 }
 
@@ -142,9 +159,20 @@ func (rn *Node) heartbeatLoop() {
 				}
 				rn.mu.Unlock()
 
-				_, err := rn.sendAppendEntries(peer, req)
+				res, err := rn.sendAppendEntries(peer, req)
 				if err != nil {
 					log.Printf("[%s] heartbeat to %s failed: %v", rn.id, peer, err)
+				} else {
+					if !res.Success {
+						rn.mu.Lock()
+						if res.Term > rn.currentTerm {
+							log.Printf("Found higher term %d in append entries response of node %s current term %d", res.Term, rn.id, rn.currentTerm)
+							rn.state = Follower
+							rn.currentTerm = res.Term
+							rn.votedFor = ""
+						}
+						rn.mu.Unlock()
+					}
 				}
 			}(peer)
 		}
@@ -181,6 +209,21 @@ func (rn *Node) ReplicateCommand(cmd interface{}) {
 			res, err := rn.sendAppendEntries(peer, req)
 			if err == nil && res.Success {
 				log.Printf("[%s] replicated command to %s", rn.id, peer)
+			}
+
+			if err != nil {
+				log.Printf("[%s] heartbeat to %s failed: %v", rn.id, peer, err)
+			} else {
+				if !res.Success {
+					rn.mu.Lock()
+					if res.Term > rn.currentTerm {
+						log.Printf("Found higher term %d in append entries response of node %s current term %d", res.Term, rn.id, rn.currentTerm)
+						rn.state = Follower
+						rn.currentTerm = res.Term
+						rn.votedFor = ""
+					}
+					rn.mu.Unlock()
+				}
 			}
 		}(peer)
 	}

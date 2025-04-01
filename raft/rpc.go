@@ -49,7 +49,7 @@ func (rn *Node) HandleRequestVote(req RequestVoteRequest) RequestVoteResponse {
 		return RequestVoteResponse{Term: rn.currentTerm, VoteGranted: false}
 	}
 
-	if rn.votedFor == "" || rn.votedFor == req.CandidateID || req.Term > rn.currentTerm {
+	if rn.votedFor == "" || rn.votedFor == req.CandidateID || req.Term > rn.currentTerm { // if the candidate with most votes dies down, new election term will start
 		// TODO: Check if candidate’s log is at least as up-to-date
 		rn.votedFor = req.CandidateID
 		rn.currentTerm = req.Term
