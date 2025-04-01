@@ -17,6 +17,7 @@ func (rn *Node) HandleAppendEntries(req AppendEntriesRequest) AppendEntriesRespo
 	rn.state = Follower
 	rn.currentTerm = req.Term
 	rn.lastHeartbeat = time.Now()
+	rn.votedFor = ""
 	// Basic log consistency check
 	if req.PrevLogIndex >= 0 {
 		if req.PrevLogIndex >= len(rn.log) ||
@@ -48,7 +49,7 @@ func (rn *Node) HandleRequestVote(req RequestVoteRequest) RequestVoteResponse {
 		return RequestVoteResponse{Term: rn.currentTerm, VoteGranted: false}
 	}
 
-	if rn.votedFor == "" || rn.votedFor == req.CandidateID {
+	if rn.votedFor == "" || rn.votedFor == req.CandidateID || req.Term > rn.currentTerm {
 		// TODO: Check if candidate’s log is at least as up-to-date
 		rn.votedFor = req.CandidateID
 		rn.currentTerm = req.Term
