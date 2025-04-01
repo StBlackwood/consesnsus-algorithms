@@ -18,7 +18,9 @@ type Node struct {
 	state       string
 	commitIndex int
 	lastApplied int
-	mu          sync.Mutex
+
+	lastHeartbeat time.Time
+	mu            sync.Mutex
 }
 
 func NewNode(id string, peers []string) *Node {
@@ -36,17 +38,18 @@ const (
 )
 
 func (rn *Node) Start() error {
-	err := rpc.Register(rn)
+	err := rpc.RegisterName(rn.id, rn)
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", ":"+rn.id)
+	listener, err := net.Listen("tcp", "localhost:"+rn.id)
 	if err != nil {
 		return err
 	}
 	go rpc.Accept(listener)
 
 	go rn.electionTimer()
+	rn.lastHeartbeat = time.Now()
 
 	log.Printf("[%s] started as %s", rn.id, rn.state)
 	return nil
@@ -54,10 +57,15 @@ func (rn *Node) Start() error {
 
 func (rn *Node) electionTimer() {
 	for {
-		time.Sleep(time.Duration(150+rand.Intn(150)) * time.Millisecond)
+		time.Sleep(time.Duration(50+rand.Intn(50)) * time.Millisecond)
+
+		rn.mu.Lock()
+		state := rn.state
+		elapsed := time.Since(rn.lastHeartbeat)
+		rn.mu.Unlock()
 
 		// If still follower and no heartbeat, trigger election
-		if rn.state == Follower {
+		if state == Follower && elapsed > 300*time.Millisecond {
 			log.Printf("[%s] election timeout - becoming candidate", rn.id)
 			rn.startElection()
 		}
@@ -91,6 +99,12 @@ func (rn *Node) startElection() {
 				mu.Lock()
 				votes++
 				mu.Unlock()
+			} else {
+				if err != nil {
+					log.Printf("error in election %v", err)
+				} else {
+					log.Printf("[%s] vote not granted for id: %s", peer, rn.id)
+				}
 			}
 		}(peer)
 	}

@@ -3,6 +3,7 @@ package raft
 import (
 	"fmt"
 	"net/rpc"
+	"time"
 )
 
 func (rn *Node) HandleAppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
@@ -15,6 +16,7 @@ func (rn *Node) HandleAppendEntries(req AppendEntriesRequest) AppendEntriesRespo
 
 	rn.state = Follower
 	rn.currentTerm = req.Term
+	rn.lastHeartbeat = time.Now()
 	// Basic log consistency check
 	if req.PrevLogIndex >= 0 {
 		if req.PrevLogIndex >= len(rn.log) ||
@@ -79,7 +81,7 @@ func (rn *Node) sendAppendEntries(peer string, req AppendEntriesRequest) (Append
 	}
 	defer client.Close()
 
-	err = client.Call("Node.AppendEntries", req, &res)
+	err = client.Call(peer+".AppendEntries", req, &res)
 	return res, err
 }
 
@@ -91,6 +93,6 @@ func (rn *Node) SendRequestVote(peer string, req RequestVoteRequest) (RequestVot
 	}
 	defer client.Close()
 
-	err = client.Call("Node.RequestVote", req, &res)
+	err = client.Call(peer+".RequestVote", req, &res)
 	return res, err
 }
