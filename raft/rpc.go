@@ -45,18 +45,36 @@ func (rn *Node) HandleAppendEntries(req AppendEntriesRequest) AppendEntriesRespo
 }
 
 func (rn *Node) HandleRequestVote(req RequestVoteRequest) RequestVoteResponse {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+
 	if req.Term < rn.currentTerm {
 		return RequestVoteResponse{Term: rn.currentTerm, VoteGranted: false}
 	}
 
-	if rn.votedFor == "" || rn.votedFor == req.CandidateID || req.Term > rn.currentTerm { // if the candidate with most votes dies down, new election term will start
-		// TODO: Check if candidate’s log is at least as up-to-date
-		rn.votedFor = req.CandidateID
+	// Step down if new term
+	if req.Term > rn.currentTerm {
 		rn.currentTerm = req.Term
-		return RequestVoteResponse{Term: req.Term, VoteGranted: true}
+		rn.votedFor = ""
+		rn.state = Follower
 	}
 
-	return RequestVoteResponse{Term: rn.currentTerm, VoteGranted: false}
+	if rn.votedFor != "" && rn.votedFor != req.CandidateID { // if the candidate with most votes dies down, new election term will start
+		return RequestVoteResponse{Term: rn.currentTerm, VoteGranted: false}
+	}
+
+	lastTerm := rn.lastLogTerm()
+	lastIndex := len(rn.log) - 1
+
+	upToDate := req.LastLogTerm > lastTerm ||
+		(req.LastLogTerm == lastTerm && req.LastLogIndex >= lastIndex)
+	if !upToDate {
+		return RequestVoteResponse{Term: rn.currentTerm, VoteGranted: false}
+	}
+
+	rn.votedFor = req.CandidateID
+	return RequestVoteResponse{Term: req.Term, VoteGranted: true}
+
 }
 
 // RPC handlers (must be exported and use pointer receiver)

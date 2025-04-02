@@ -122,19 +122,17 @@ func (rn *Node) startElection() {
 	}
 	wg.Wait()
 
-	if votes > len(rn.Peers)/2 {
+	rn.mu.Lock()
+	if votes > len(rn.Peers)/2 && rn.state == Candidate {
 		log.Printf("[%s] wins election with %d votes", rn.id, votes)
-		rn.mu.Lock()
 		rn.state = Leader
 		rn.votedFor = ""
-		rn.mu.Unlock()
 		go rn.heartbeatLoop()
 	} else {
-		rn.mu.Lock()
 		rn.state = Follower
 		rn.votedFor = ""
-		rn.mu.Unlock()
 	}
+	rn.mu.Unlock()
 }
 
 func (rn *Node) lastLogTerm() int {
